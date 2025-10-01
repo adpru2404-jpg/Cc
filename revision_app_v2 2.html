@@ -1,0 +1,182 @@
+
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mes Révisions (Méthode J)</title>
+  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js');
+    }
+  </script>
+</head>
+<body class="bg-gray-100 text-gray-800">
+  <div class="max-w-xl mx-auto p-4">
+    <h1 class="text-2xl font-bold mb-4 text-center">📚 Planificateur de Révisions</h1>
+
+    <!-- Formulaire -->
+    <form id="courseForm" class="space-y-4 bg-white p-4 rounded shadow">
+      <input type="text" id="title" placeholder="Nom du cours" required class="w-full p-2 border rounded" />
+      <input type="date" id="startDate" required class="w-full p-2 border rounded" />
+      <input type="text" id="intervals" placeholder="Jours de révision (ex: 1,3,7,14)" required class="w-full p-2 border rounded" />
+      <select id="level" class="w-full p-2 border rounded">
+        <option value="faible">🔴 Débutant</option>
+        <option value="moyen">🟡 Moyen</option>
+        <option value="maitrise">🟢 Maîtrisé</option>
+      </select>
+      <button type="submit" class="w-full bg-blue-500 text-white p-2 rounded hover:bg-blue-600">Ajouter</button>
+    </form>
+
+    <!-- Bouton test de notification -->
+    <div class="text-center mt-4">
+      <button onclick="testNotification()" class="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600">
+        Tester la notification 🔔
+      </button>
+    </div>
+
+    <!-- Liste des révisions du jour -->
+    <div id="todayList" class="mt-6">
+      <h2 class="text-xl font-semibold mb-2">📅 Révisions du jour</h2>
+      <ul id="revisionList" class="space-y-2"></ul>
+    </div>
+
+    <!-- Récapitulatif de tous les cours -->
+    <div id="allCourses" class="mt-8">
+      <h2 class="text-xl font-semibold mb-2">📘 Tous les cours enregistrés</h2>
+      <div id="courseCards" class="grid gap-4"></div>
+    </div>
+  </div>
+
+  <script>
+    const STORAGE_KEY = 'cours_revision';
+    const form = document.getElementById('courseForm');
+    const list = document.getElementById('revisionList');
+    const courseCards = document.getElementById('courseCards');
+
+    const levelColors = {
+      faible: 'bg-red-100 text-red-800 border-red-300',
+      moyen: 'bg-yellow-100 text-yellow-800 border-yellow-300',
+      maitrise: 'bg-green-100 text-green-800 border-green-300'
+    };
+
+    const getCourses = () => JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
+    const saveCourses = (courses) => localStorage.setItem(STORAGE_KEY, JSON.stringify(courses));
+
+    const addCourse = (e) => {
+      e.preventDefault();
+      const title = document.getElementById('title').value;
+      const startDate = new Date(document.getElementById('startDate').value);
+      const intervals = document.getElementById('intervals').value.split(',').map(d => parseInt(d.trim()));
+      const level = document.getElementById('level').value;
+
+      const course = { title, startDate: startDate.toISOString(), intervals, level };
+      const courses = getCourses();
+      courses.push(course);
+      saveCourses(courses);
+      form.reset();
+      renderToday();
+      renderAllCourses();
+    };
+
+    const isToday = (dateStr) => {
+      const today = new Date();
+      const date = new Date(dateStr);
+      return date.getFullYear() === today.getFullYear() &&
+             date.getMonth() === today.getMonth() &&
+             date.getDate() === today.getDate();
+    };
+
+    const renderToday = () => {
+      const courses = getCourses();
+      list.innerHTML = '';
+
+      courses.forEach(course => {
+        const start = new Date(course.startDate);
+        course.intervals.forEach(day => {
+          const revDate = new Date(start);
+          revDate.setDate(revDate.getDate() + day);
+          if (isToday(revDate.toISOString())) {
+            const li = document.createElement('li');
+            li.className = `p-3 rounded shadow ${levelColors[course.level]}`;
+            li.textContent = `${course.title} (J+${day}) - Niveau: ${course.level.toUpperCase()}`;
+            list.appendChild(li);
+          }
+        });
+      });
+    };
+
+    const renderAllCourses = () => {
+      const courses = getCourses();
+      courseCards.innerHTML = '';
+
+      courses.forEach(course => {
+        const card = document.createElement('div');
+        card.className = `p-4 rounded border shadow ${levelColors[course.level]}`;
+
+        const intervalsText = course.intervals.map(j => `J+${j}`).join(', ');
+        const startDate = new Date(course.startDate).toLocaleDateString();
+
+        card.innerHTML = `
+          <h3 class="text-lg font-bold">${course.title}</h3>
+          <p>📅 Départ : ${startDate}</p>
+          <p>🕒 Révisions : ${intervalsText}</p>
+          <p>🔎 Niveau : ${course.level.toUpperCase()}</p>
+        `;
+        courseCards.appendChild(card);
+      });
+    };
+
+    const requestNotificationPermission = () => {
+      if (Notification && Notification.permission !== "granted") {
+        Notification.requestPermission();
+      }
+    };
+
+    const dailyNotification = () => {
+      if (Notification.permission === "granted") {
+        const courses = getCourses();
+        const messages = [];
+
+        courses.forEach(course => {
+          const start = new Date(course.startDate);
+          course.intervals.forEach(day => {
+            const revDate = new Date(start);
+            revDate.setDate(revDate.getDate() + day);
+            if (isToday(revDate.toISOString())) {
+              messages.push(`${course.title} (J+${day})`);
+            }
+          });
+        });
+
+        if (messages.length > 0) {
+          new Notification("📚 Révisions à faire aujourd’hui :", {
+            body: messages.join('\n'),
+            icon: 'https://cdn-icons-png.flaticon.com/512/3135/3135755.png'
+          });
+        }
+      }
+    };
+
+    const testNotification = () => {
+      if (Notification.permission === "granted") {
+        new Notification("🔔 Notification test", {
+          body: "Si tu vois ce message, c'est que les notifications fonctionnent !",
+          icon: 'https://cdn-icons-png.flaticon.com/512/3135/3135755.png'
+        });
+      } else {
+        requestNotificationPermission();
+      }
+    };
+
+    form.addEventListener('submit', addCourse);
+    document.addEventListener('DOMContentLoaded', () => {
+      renderToday();
+      renderAllCourses();
+      requestNotificationPermission();
+      dailyNotification();
+    });
+  </script>
+</body>
+</html>
